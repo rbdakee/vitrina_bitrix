@@ -23,10 +23,14 @@ class BitrixPlacementService:
             refresh_token=payload.refresh_token,
             member_id=payload.member_id,
         )
+        try:
+            await self.client.unbind_toolbar_placement(context)
+        except RuntimeError:
+            pass
         details = await self.client.bind_toolbar_placement(context, self.settings.bitrix_toolbar_url)
         return {
             "success": True,
-            "placement": "CRM_LEAD_LIST_TOOLBAR",
+            "placement": "CRM_DEAL_LIST_TOOLBAR",
             "handler_url": self.settings.bitrix_toolbar_url,
             "details": details,
         }
@@ -43,7 +47,7 @@ class BitrixPlacementService:
         details = await self.client.unbind_toolbar_placement(context)
         return {
             "success": True,
-            "placement": "CRM_LEAD_LIST_TOOLBAR",
+            "placement": "CRM_DEAL_LIST_TOOLBAR",
             "handler_url": self.settings.bitrix_toolbar_url,
             "details": details,
         }

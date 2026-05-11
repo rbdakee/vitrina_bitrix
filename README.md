@@ -1,91 +1,75 @@
-# vitrina_bitrix
+# vitrina-bitrix
 
-FastAPI backend for Vitrina -> Bitrix assignment flow.
+Backend-сервис, который выдаёт агентам холодные объекты из базы Vitrina и автоматически создаёт по ним сделки в Bitrix24.
 
-## What is in the repo
+## Что делает
 
-- FastAPI app with async SQLAlchemy
-- migration for new service tables only
-- business logic for "Добавить 10 объектов"
-- filters API based on `vitrina_agents.property_classes`
-- admin API for Bitrix user -> agent mappings
-- Bitrix toolbar/install flow scaffold
-- unit tests for selection and payload building
+- Агент заходит в **CRM → Сделки** в Bitrix24 и нажимает кнопку **«Добавить 10 объектов»** на тулбаре.
+- Backend выбирает 10 свободных объектов из `parsed_properties` с учётом квот A/B/C (3/3/4) и `property_class` агента, помечает их назначенными (`stats_agent_given`).
+- На каждый объект создаётся **контакт** (с телефонами продавца) и **сделка** в воронке "Предложение (продажа/аренда)" → стадия "Лид", с UF-полями: тип недвижимости, площадь, этаж/этажность, год постройки, комнатность, цена, состояние, адрес, ссылка на ЖК (smart-процесс 1072).
+- Имя ЖК сматчивается со смарт-процессом ЖК через ленивый persistent-кеш (`var/complex_cache.json`). Если матч не найден — название кладётся в комменты.
+- В комменты сделки также пишутся: krisha.kz ссылка, застройщик, класс объекта, цена за м², высота потолков, материал стен, описание и т.д.
+- У агента действует лимит: если у него уже **15 и больше** нереализованных объектов (статусы "Не позвонили", "Перезвонить", "Недозвон", "Встреча"), новая выдача блокируется.
 
-## Project structure
+## Стек
 
-```text
+- Python 3.11+ / FastAPI / SQLAlchemy 2 (async) / asyncpg / Alembic
+- Postgres (внешняя БД, не управляется этим сервисом)
+- Bitrix24 local server-side application (OAuth + placement bind)
+
+## Структура
+
+```
 app/
-  api/
-  bitrix/
-  db/
-  repositories/
-  schemas/
-  services/
-migrations/
-tests/
+  api/routes/         FastAPI endpoints (admin, bitrix install/uninstall, deal-toolbar, health, UI)
+  bitrix/client.py    Bitrix REST client (call_method, create_contact, create_deal_with_contact, placement bind/unbind)
+  services/           Бизнес-логика
+    assignment_service.py    Выбор 10 объектов, проверка лимита, формирование payload
+    deal_payload.py          Маппинг snapshot → payload сделки + комменты
+    bitrix_deal_sync.py      Создание контакта и сделки на каждый item
+    bitrix_placement.py      install/uninstall placement в Bitrix
+    complex_matcher.py       Ленивый persistent-кеш ЖК со страничной подгрузкой
+    selection.py             Алгоритм выбора A/B/C
+    agent_mapping_service.py bitrix_user_id → agent_phone
+    filter_service.py        Фильтры property_class агента
+  repositories/       SQLAlchemy Core запросы к parsed_properties + служебным таблицам
+  db/                 Сессия, валидаторы legacy-схемы
+  config.py           Settings (pydantic-settings + .env)
+  constants.py        Лимиты, UF-коды, enum-маппинги, source/stage ID
+  schemas/            Pydantic-модели запросов/ответов
+migrations/           Alembic (служебные таблицы: assignment_batches, assignment_batch_items, bitrix_agent_mappings)
+var/                  Runtime data (complex_cache.json) — не коммитится
 ```
 
-## Requirements
+## Локальный запуск (без Docker)
 
-- Python 3.11+
-- PostgreSQL with existing legacy tables:
-  - `parsed_properties`
-  - `vitrina_agents`
-
-## Local setup
-
-1. Create a virtual environment.
-2. Install dependencies:
-
-```bash
-pip install -e .[dev]
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+copy .env.example .env   # затем заполнить
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-3. Create `.env` from `.env.example`.
-4. Run migrations for new service tables:
+## Запуск в Docker
 
-```bash
-alembic upgrade head
-```
+См. **DEPLOY.md**.
 
-5. Start the API:
+## Bitrix-приложение
 
-```bash
-uvicorn app.main:app --reload
-```
+Local server-side app:
+- **Handler URL установки**: `https://<BITRIX_APP_PUBLIC_BASE_URL>/api/v1/bitrix/install`
+- **Scope**: `crm`, `placement`, `user`
+- **Placement**: `CRM_DEAL_LIST_TOOLBAR` — биндится автоматически при установке (handler: `https://<...>/bitrix/toolbar`).
 
-## Useful commands
+После смены `BITRIX_APP_PUBLIC_BASE_URL` или замены placement в коде — переустановить приложение через "Переустановить" в карточке приложения в Bitrix24.
 
-Run tests:
+## Админ-эндпоинты
 
-```bash
-python -m pytest -q
-```
+Защищены заголовком `X-Admin-Token: <ADMIN_API_TOKEN>`. Используются для создания/обновления маппинга `bitrix_user_id → agent_phone` и просмотра батчей.
 
-Quick syntax sanity check:
+## Ключевые таблицы (внешняя БД)
 
-```bash
-python -m compileall app migrations tests
-```
-
-## Main endpoints
-
-- `GET /health`
-- `POST /api/v1/assignments/take-10`
-- `GET /api/v1/assignments/{batch_id}`
-- `GET /api/v1/agents/{bitrix_user_id}/filters`
-- `PUT /api/v1/agents/{bitrix_user_id}/filters`
-- `GET /api/v1/property-classes`
-- `GET/POST/PUT/DELETE /api/v1/admin/bitrix-agent-mappings`
-- `POST /api/v1/bitrix/install`
-- `POST /api/v1/bitrix/uninstall`
-- `POST /api/v1/bitrix/lead-toolbar/run`
-- `GET /bitrix/toolbar`
-
-## Notes
-
-- Legacy tables are validated on startup, but not migrated by this service.
-- Current implementation status is documented in `CHANGES.md`.
-- Source implementation plan is in `IMPLEMENTATION_PLAN.md`.
-
+- `parsed_properties` — источник объектов (managed elsewhere). Сервис читает поля по списку `app/constants.py:SNAPSHOT_FIELDS` и пишет в неё только `stats_agent_given` (при назначении).
+- `assignment_batches`, `assignment_batch_items` — служебные, накатываются Alembic-миграцией `0001_create_service_tables`.
+- `bitrix_agent_mappings` — служебная, маппинг bitrix-юзера на phone агента.

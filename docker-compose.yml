@@ -1,0 +1,17 @@
+services:
+  api:
+    build: .
+    image: vitrina-bitrix:latest
+    container_name: vitrina-bitrix
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./var:/app/var
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

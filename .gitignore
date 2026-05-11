@@ -28,3 +28,6 @@ Thumbs.db
 .DS_Store
 pytest-cache-files-*/
 
+# Runtime data (Bitrix ЖК cache, etc.)
+var/
+local/

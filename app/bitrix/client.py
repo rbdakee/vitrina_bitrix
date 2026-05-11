@@ -5,6 +5,20 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.constants import (
+    BITRIX_TOOLBAR_PLACEMENT,
+    UF_ADDRESS,
+    UF_AREA,
+    UF_COMPLEX_SMART,
+    UF_CONDITION,
+    UF_FLOOR,
+    UF_FLOOR_COUNT,
+    UF_ROOMS,
+    UF_SELL_PRICE,
+    UF_TYPE_OFFER,
+    UF_TYPE_PROPERTY,
+    UF_YEAR_BUILT,
+)
 from app.schemas.bitrix import BitrixExecutionContext
 
 
@@ -28,11 +42,16 @@ class BitrixApiClient:
                 params={"auth": context.access_token},
                 json=params,
             )
+            try:
+                payload = response.json()
+            except ValueError:
+                response.raise_for_status()
+                raise RuntimeError(f"Bitrix returned non-JSON response: {response.text}")
+            if isinstance(payload, dict) and "error" in payload:
+                error_code = str(payload.get("error") or "")
+                description = payload.get("error_description") or error_code
+                raise RuntimeError(f"{error_code}: {description}" if error_code else description)
             response.raise_for_status()
-            payload = response.json()
-            if "error" in payload:
-                description = payload.get("error_description") or payload["error"]
-                raise RuntimeError(description)
             return payload
 
     async def bind_toolbar_placement(
@@ -44,7 +63,7 @@ class BitrixApiClient:
             context,
             "placement.bind",
             {
-                "PLACEMENT": "CRM_LEAD_LIST_TOOLBAR",
+                "PLACEMENT": BITRIX_TOOLBAR_PLACEMENT,
                 "HANDLER": handler_url,
                 "TITLE": "Добавить 10 объектов",
                 "DESCRIPTION": "Vitrina cold assignment",
@@ -55,37 +74,76 @@ class BitrixApiClient:
         return await self.call_method(
             context,
             "placement.unbind",
-            {
-                "PLACEMENT": "CRM_LEAD_LIST_TOOLBAR",
-                "HANDLER": self.settings.bitrix_toolbar_url,
-            },
+            {"PLACEMENT": BITRIX_TOOLBAR_PLACEMENT},
         )
 
-    async def create_lead(
+    async def create_contact(
         self,
         context: BitrixExecutionContext,
-        normalized_payload: dict[str, Any],
+        *,
+        name: str,
+        phones: list[str],
     ) -> str:
-        phones = normalized_payload.get("phones") or []
-        fields: dict[str, Any] = {
-            "TITLE": normalized_payload["title"],
-            "ASSIGNED_BY_ID": normalized_payload["assignedById"],
-            "SOURCE_ID": normalized_payload["sourceId"],
-            "SOURCE_DESCRIPTION": normalized_payload["sourceDescription"],
-            "COMMENTS": normalized_payload["comments"],
-            "ORIGINATOR_ID": normalized_payload["originatorId"],
-            "ORIGIN_ID": normalized_payload["originId"],
-        }
+        fields: dict[str, Any] = {"NAME": name}
         if phones:
-            fields["PHONE"] = [
-                {"VALUE": phone["value"], "VALUE_TYPE": phone.get("valueType", "WORK")}
-                for phone in phones
-            ]
-        if normalized_payload.get("stageId"):
-            fields["STAGE_ID"] = normalized_payload["stageId"]
-        if normalized_payload.get("categoryId"):
-            fields["CATEGORY_ID"] = normalized_payload["categoryId"]
-
-        response = await self.call_method(context, "crm.lead.add", {"fields": fields})
+            fields["PHONE"] = [{"VALUE": phone, "VALUE_TYPE": "WORK"} for phone in phones]
+        response = await self.call_method(context, "crm.contact.add", {"fields": fields})
         return str(response["result"])
 
+    async def create_deal_with_contact(
+        self,
+        context: BitrixExecutionContext,
+        *,
+        payload: dict[str, Any],
+        complex_smart_id: int | None,
+    ) -> str:
+        contact_info = payload.get("contact") or {}
+        contact_phones = list(contact_info.get("phones") or [])
+        contact_name = contact_info.get("name") or "Vitrina contact"
+        contact_id = await self.create_contact(
+            context, name=contact_name, phones=contact_phones
+        )
+
+        comments = payload.get("comments") or ""
+        if complex_smart_id is None and payload.get("complex_name"):
+            extra = f"ЖК (не сматчен): {payload['complex_name']}"
+            comments = f"{comments}\n{extra}" if comments else extra
+
+        fields: dict[str, Any] = {
+            "TITLE": payload["title"],
+            "ASSIGNED_BY_ID": payload["assigned_by_id"],
+            "CONTACT_ID": contact_id,
+            "SOURCE_ID": payload["source_id"],
+            "SOURCE_DESCRIPTION": payload.get("source_description") or "",
+            "CURRENCY_ID": payload.get("currency_id") or "KZT",
+            "COMMENTS": comments,
+        }
+        if payload.get("opportunity") is not None:
+            fields["OPPORTUNITY"] = payload["opportunity"]
+        if payload.get("category_id"):
+            fields["CATEGORY_ID"] = payload["category_id"]
+        if payload.get("stage_id"):
+            fields["STAGE_ID"] = payload["stage_id"]
+
+        uf = payload.get("uf") or {}
+        uf_map: dict[str, Any] = {
+            UF_TYPE_OFFER: uf.get("type_offer_id"),
+            UF_TYPE_PROPERTY: uf.get("type_property_id"),
+            UF_CONDITION: uf.get("condition_id"),
+            UF_ROOMS: uf.get("rooms_id"),
+            UF_FLOOR: uf.get("floor"),
+            UF_FLOOR_COUNT: uf.get("floor_count"),
+            UF_AREA: uf.get("area"),
+            UF_YEAR_BUILT: uf.get("year_built"),
+            UF_SELL_PRICE: uf.get("sell_price"),
+            UF_ADDRESS: uf.get("address"),
+        }
+        for code, value in uf_map.items():
+            if value is None or value == "":
+                continue
+            fields[code] = value
+        if complex_smart_id is not None:
+            fields[UF_COMPLEX_SMART] = complex_smart_id
+
+        response = await self.call_method(context, "crm.deal.add", {"fields": fields})
+        return str(response["result"])

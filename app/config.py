@@ -33,8 +33,11 @@ class Settings(BaseSettings):
     bitrix_app_client_id: str | None = Field(default=None, alias="BITRIX_APP_CLIENT_ID")
     bitrix_app_client_secret: str | None = Field(default=None, alias="BITRIX_APP_CLIENT_SECRET")
     bitrix_app_public_base_url: str | None = Field(default=None, alias="BITRIX_APP_PUBLIC_BASE_URL")
-    bitrix_lead_stage_id: str | None = Field(default=None, alias="BITRIX_LEAD_STAGE_ID")
-    bitrix_lead_category_id: str | None = Field(default=None, alias="BITRIX_LEAD_CATEGORY_ID")
+    bitrix_deal_stage_id: str | None = Field(default=None, alias="BITRIX_DEAL_STAGE_ID")
+    bitrix_deal_category_id: str | None = Field(default=None, alias="BITRIX_DEAL_CATEGORY_ID")
+    bitrix_complex_cache_path: str = Field(
+        default="var/complex_cache.json", alias="BITRIX_COMPLEX_CACHE_PATH"
+    )
 
     request_timeout_seconds: float = Field(default=30.0, alias="REQUEST_TIMEOUT_SECONDS")
     skip_startup_validation: bool = Field(default=False, alias="SKIP_STARTUP_VALIDATION")

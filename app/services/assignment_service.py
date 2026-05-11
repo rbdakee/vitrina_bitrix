@@ -19,7 +19,7 @@ from app.repositories.legacy_agents import LegacyAgentRepository
 from app.repositories.parsed_properties import ParsedPropertyRepository
 from app.schemas.bitrix import BitrixExecutionContext
 from app.services.agent_mapping_service import AgentMappingService
-from app.services.lead_payload import LeadPayloadBuilder
+from app.services.deal_payload import DealPayloadBuilder
 from app.services.selection import AssignmentSelector
 
 
@@ -31,7 +31,7 @@ class AssignmentService:
         legacy_agent_repo: LegacyAgentRepository,
         property_repo: ParsedPropertyRepository,
         batch_repo: AssignmentBatchRepository,
-        payload_builder: LeadPayloadBuilder,
+        payload_builder: DealPayloadBuilder,
         selector: AssignmentSelector,
     ) -> None:
         self.mapping_service = mapping_service
