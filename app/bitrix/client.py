@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -21,6 +22,8 @@ from app.constants import (
 )
 from app.schemas.bitrix import BitrixExecutionContext
 
+logger = logging.getLogger(__name__)
+
 
 class BitrixApiClient:
     def __init__(self, settings: Settings) -> None:
@@ -36,6 +39,7 @@ class BitrixApiClient:
             raise ValueError("Bitrix portal_domain and access_token are required.")
 
         url = f"https://{context.portal_domain}/rest/{method}.json"
+        logger.info("Bitrix call %s params=%s", method, params)
         async with httpx.AsyncClient(timeout=self.settings.request_timeout_seconds) as client:
             response = await client.post(
                 url,
@@ -45,11 +49,24 @@ class BitrixApiClient:
             try:
                 payload = response.json()
             except ValueError:
+                logger.error(
+                    "Bitrix %s non-JSON response: status=%s body=%s",
+                    method,
+                    response.status_code,
+                    response.text[:500],
+                )
                 response.raise_for_status()
                 raise RuntimeError(f"Bitrix returned non-JSON response: {response.text}")
             if isinstance(payload, dict) and "error" in payload:
                 error_code = str(payload.get("error") or "")
                 description = payload.get("error_description") or error_code
+                logger.error(
+                    "Bitrix %s returned error: status=%s code=%s desc=%s",
+                    method,
+                    response.status_code,
+                    error_code,
+                    description,
+                )
                 raise RuntimeError(f"{error_code}: {description}" if error_code else description)
             response.raise_for_status()
             return payload

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -36,6 +38,8 @@ from app.services.agent_mapping_service import (
 from app.services.assignment_service import AssignmentService
 from app.services.bitrix_deal_sync import BitrixDealSyncService
 from app.services.bitrix_placement import BitrixPlacementService
+
+logger = logging.getLogger(__name__)
 
 api_router = APIRouter(
     prefix="/bitrix",
@@ -639,11 +643,17 @@ async def install_bitrix_app(
         await service.install(payload)
         return HTMLResponse(_INSTALL_FINISH_HTML)
     except BitrixSyncConfigurationError as exc:
+        logger.warning("Bitrix install rejected: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValidationError as exc:
+        logger.warning("Bitrix install payload invalid: %s", exc.errors())
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
     except ValueError as exc:
+        logger.warning("Bitrix install payload invalid: %s", exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        logger.exception("Bitrix install failed: placement API error")
+        raise HTTPException(status_code=502, detail=f"Bitrix API error: {exc}") from exc
 
 
 @api_router.post("/uninstall", response_model=BitrixInstallResponse)
@@ -655,11 +665,17 @@ async def uninstall_bitrix_app(
         payload = await _parse_install_payload(request)
         return BitrixInstallResponse.model_validate(await service.uninstall(payload))
     except BitrixSyncConfigurationError as exc:
+        logger.warning("Bitrix uninstall rejected: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValidationError as exc:
+        logger.warning("Bitrix uninstall payload invalid: %s", exc.errors())
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
     except ValueError as exc:
+        logger.warning("Bitrix uninstall payload invalid: %s", exc)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        logger.exception("Bitrix uninstall failed: placement API error")
+        raise HTTPException(status_code=502, detail=f"Bitrix API error: {exc}") from exc
 
 
 @api_router.post(
