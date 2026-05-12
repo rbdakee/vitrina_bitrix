@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.constants import BITRIX_STATUS_IN_PROGRESS
+from app.db.legacy_tables import parsed_properties
 from app.db.models import AssignmentBatch, AssignmentBatchItem
 
 
@@ -71,4 +73,23 @@ class AssignmentBatchRepository:
             .where(AssignmentBatch.id == batch_id)
         )
         return result.scalar_one_or_none()
+
+    async def list_active_bitrix_items(
+        self, agent_phone: str
+    ) -> list[tuple[int, str]]:
+        statement = (
+            select(AssignmentBatchItem.vitrina_id, AssignmentBatchItem.bitrix_lead_id)
+            .join(AssignmentBatch, AssignmentBatchItem.batch_id == AssignmentBatch.id)
+            .join(
+                parsed_properties,
+                parsed_properties.c.vitrina_id == AssignmentBatchItem.vitrina_id,
+            )
+            .where(
+                AssignmentBatch.agent_phone == agent_phone,
+                AssignmentBatchItem.bitrix_lead_id.is_not(None),
+                parsed_properties.c.stats_object_status == BITRIX_STATUS_IN_PROGRESS,
+            )
+        )
+        result = await self.session.execute(statement)
+        return [(row[0], row[1]) for row in result.fetchall()]
 

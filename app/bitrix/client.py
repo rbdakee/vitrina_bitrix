@@ -94,6 +94,37 @@ class BitrixApiClient:
             {"PLACEMENT": BITRIX_TOOLBAR_PLACEMENT},
         )
 
+    async def fetch_deal_stages(
+        self,
+        context: BitrixExecutionContext,
+        ids: list[str],
+    ) -> dict[str, str | None]:
+        if not ids:
+            return {}
+
+        result: dict[str, str | None] = {}
+        batch_size = 50
+        for start in range(0, len(ids), batch_size):
+            batch = ids[start : start + batch_size]
+            response = await self.call_method(
+                context,
+                "crm.deal.list",
+                {
+                    "filter": {"ID": batch},
+                    "select": ["ID", "STAGE_SEMANTIC_ID"],
+                },
+            )
+            deals = response.get("result") or []
+            returned: dict[str, str | None] = {}
+            for deal in deals:
+                deal_id = deal.get("ID")
+                if deal_id is None:
+                    continue
+                returned[str(deal_id)] = deal.get("STAGE_SEMANTIC_ID")
+            for lead_id in batch:
+                result[lead_id] = returned.get(lead_id)
+        return result
+
     async def create_contact(
         self,
         context: BitrixExecutionContext,

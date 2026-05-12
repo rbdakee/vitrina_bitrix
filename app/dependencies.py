@@ -69,6 +69,7 @@ def get_assignment_service(
     session: AsyncSession = Depends(get_db_session),
     settings: Settings = Depends(get_settings_dependency),
     mapping_service: AgentMappingService = Depends(get_mapping_service),
+    bitrix_client: BitrixApiClient = Depends(get_bitrix_client),
 ) -> AssignmentService:
     return AssignmentService(
         mapping_service=mapping_service,
@@ -77,6 +78,7 @@ def get_assignment_service(
         batch_repo=AssignmentBatchRepository(session),
         payload_builder=DealPayloadBuilder(settings),
         selector=AssignmentSelector(),
+        bitrix_client=bitrix_client,
     )
 
 

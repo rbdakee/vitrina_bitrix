@@ -59,17 +59,26 @@ ROOMS_VALUE_TO_ENUM_ID: dict[str, int] = {
     "15": 51681,
 }
 
+BITRIX_STATUS_IN_PROGRESS = "В работе Bitrix"
+BITRIX_STATUS_WON = "Договор Bitrix"
+BITRIX_STATUS_LOST = "Отказ Bitrix"
+BITRIX_STATUS_ARCHIVED = "Архив Bitrix"
+
 NON_REALIZED_STATUSES = (
     "Не позвонили",
     "Перезвонить",
     "Недозвон",
     "Встреча",
+    BITRIX_STATUS_IN_PROGRESS,
 )
 
 REALIZED_STATUSES = (
     "Договор",
     "Отказ",
     "Архив",
+    BITRIX_STATUS_WON,
+    BITRIX_STATUS_LOST,
+    BITRIX_STATUS_ARCHIVED,
 )
 
 ASSIGNMENT_STATUS_PREVIEW = "preview"

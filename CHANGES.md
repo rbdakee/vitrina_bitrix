@@ -1,5 +1,45 @@
 # CHANGES
 
+## Статус на 2026-05-13
+
+### Bitrix status sync перед выдачей
+
+В Bitrix-flow раньше `stats_object_status` навечно оставался `"Не позвонили"` — после ~1.5 выдач (10+5) агент упирался в лимит и больше выдач не получал. Теперь перед каждой выдачей из тулбара мы синкаем статусы наших сделок из Bitrix и обновляем `parsed_properties.stats_object_status` соответствующим Bitrix-специфичным статусом. Лимит `15+` продолжает считаться через `count_non_realized` — он автоматически подхватывает новый «В работе Bitrix».
+
+Новые статусы ([app/constants.py](app/constants.py)):
+
+- `BITRIX_STATUS_IN_PROGRESS = "В работе Bitrix"` — NON_REALIZED, занимает слот лимита.
+- `BITRIX_STATUS_WON = "Договор Bitrix"` — REALIZED (`STAGE_SEMANTIC_ID = "S"`).
+- `BITRIX_STATUS_LOST = "Отказ Bitrix"` — REALIZED (`STAGE_SEMANTIC_ID = "F"`).
+- `BITRIX_STATUS_ARCHIVED = "Архив Bitrix"` — REALIZED, проставляется когда сделка удалена в Bitrix (нет в ответе `crm.deal.list`).
+
+Алгоритм синка ([AssignmentService._sync_bitrix_statuses](app/services/assignment_service.py)):
+
+1. Из БД берём `(vitrina_id, bitrix_lead_id)` для агента, у которых `stats_object_status = "В работе Bitrix"` (новый метод [`AssignmentBatchRepository.list_active_bitrix_items`](app/repositories/assignment_batches.py)).
+2. Дёргаем [`BitrixApiClient.fetch_deal_stages`](app/bitrix/client.py) — батчит по 50 ID, делает `crm.deal.list { filter: {ID: [...]}, select: ["ID", "STAGE_SEMANTIC_ID"] }`.
+3. Маппинг семантики: `P` — не трогаем, `S` → `Договор Bitrix`, `F` → `Отказ Bitrix`, `None` (удалён) → `Архив Bitrix`. Любая другая семантика — warning, не трогаем.
+4. Записываем результат через `ParsedPropertyRepository.bulk_update_statuses` (UPDATE по группам статусов).
+
+**Fail-closed**: любая ошибка синка (RuntimeError из Bitrix, httpx, БД) превращается в `blocked_limit` batch с `error_message="Не удалось проверить статусы сделок в Bitrix, повторите позже."`.
+
+Прочие изменения:
+
+- `ParsedPropertyRepository.mark_assigned` параметризован `status_to_set` (default `"Не позвонили"` для чат-бот-flow). Bitrix-flow передаёт `BITRIX_STATUS_IN_PROGRESS`.
+- `BitrixApiClient` принят в `AssignmentService.__init__` через [app/dependencies.py](app/dependencies.py).
+- Текст `blocked_limit`-баннера обновлён на «У вас 15+ открытых сделок в работе. Закройте часть в Bitrix и попробуйте снова.»
+- Чат-бот-flow не затронут: при `bitrix_context is None` синк не запускается, статус выставляется как раньше.
+
+Что НЕ сделано (осознанно):
+
+- Не возвращаем удалённые объекты в пул автоматически — `Архив Bitrix` остаётся за агентом.
+- Нет webhook/cron — только on-demand перед выдачей.
+- Нет backfill для старых записей со статусом `"Не позвонили"` от старого Bitrix-flow.
+
+### Bitrix install 500 fix
+
+- В `pyproject.toml` и `Dockerfile` добавлен `python-multipart>=0.0.20` (требуется `Starlette.request.form()` для install/uninstall payload от Bitrix).
+- В [app/api/routes/bitrix.py](app/api/routes/bitrix.py) и [app/bitrix/client.py](app/bitrix/client.py) добавлено структурированное логирование Bitrix-вызовов и `RuntimeError`-обработка с `502` + `detail`, чтобы реальные ошибки Bitrix не скрывались за «Internal Server Error».
+
 ## Статус на 2026-04-22
 
 Репозиторий `vitrina_bitrix` больше не пустой: в нем собран новый backend на `FastAPI`, который использует существующие таблицы `parsed_properties` и `vitrina_agents` только на чтение/обновление бизнес-данных, не меняя их схему. Новые сущности сервиса вынесены в отдельные таблицы и отдельную Alembic migration.

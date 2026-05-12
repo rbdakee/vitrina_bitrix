@@ -410,7 +410,7 @@ _TOOLBAR_HTML_TEMPLATE = """<!doctype html>
         } else if (status === 'assigned' && sync === 'failed') {
           showBanner('bad', [el('strong', { text: 'Сделки не созданы. ' }), 'Объекты помечены назначенными, но Bitrix вернул ошибку на каждую.']);
         } else if (status === 'blocked_limit') {
-          showBanner('warn', '⚠ ' + (errorMsg || 'У агента уже 15+ нереализованных объектов. Закройте часть и попробуйте снова.'));
+          showBanner('warn', '⚠ ' + (errorMsg || 'У вас 15+ открытых сделок в работе. Закройте часть в Bitrix и попробуйте снова.'));
         } else if (status === 'empty_supply') {
           showBanner('warn', '⚠ ' + (errorMsg || 'Свободных объектов для выдачи не найдено.'));
         } else if (status === 'failed') {

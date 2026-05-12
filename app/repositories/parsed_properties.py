@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from collections import defaultdict
+
 from sqlalchemy import and_, desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,7 +91,12 @@ class ParsedPropertyRepository:
         by_id = {row["vitrina_id"]: row for row in rows}
         return [by_id[item_id] for item_id in ids if item_id in by_id]
 
-    async def mark_assigned(self, ids: Sequence[int], agent_phone: str) -> None:
+    async def mark_assigned(
+        self,
+        ids: Sequence[int],
+        agent_phone: str,
+        status_to_set: str = "Не позвонили",
+    ) -> None:
         if not ids:
             return
 
@@ -99,9 +106,28 @@ class ParsedPropertyRepository:
             .values(
                 stats_agent_given=agent_phone,
                 stats_time_given=func.timezone(ALMATY_TIMEZONE, func.now()),
-                stats_object_status="Не позвонили",
+                stats_object_status=status_to_set,
                 updated_at=func.now(),
             )
         )
+        await self.session.flush()
+
+    async def bulk_update_statuses(self, updates: dict[int, str]) -> None:
+        if not updates:
+            return
+
+        grouped: dict[str, list[int]] = defaultdict(list)
+        for vitrina_id, status in updates.items():
+            grouped[status].append(vitrina_id)
+
+        for status, ids in grouped.items():
+            await self.session.execute(
+                update(parsed_properties)
+                .where(parsed_properties.c.vitrina_id.in_(ids))
+                .values(
+                    stats_object_status=status,
+                    updated_at=func.now(),
+                )
+            )
         await self.session.flush()
 
