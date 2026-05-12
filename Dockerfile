@@ -19,6 +19,7 @@ RUN pip install --upgrade pip \
       "fastapi>=0.116.0" \
       "httpx>=0.28.0" \
       "pydantic-settings>=2.7.0" \
+      "python-multipart>=0.0.20" \
       "sqlalchemy>=2.0.36" \
       "uvicorn[standard]>=0.34.0"
 
